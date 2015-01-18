@@ -39,20 +39,19 @@ type Region struct {
 	Elevation int16
 }
 
-// Returns the count of the subdivisions when given the trianglesInLines
-func subdivisionsFromLines(lines []int) int {
-	result := 2 * len(lines) / 3
-	return int(math.Log2(float64(result)))
+// Returns the count of the subdivisions when given the len(trianglesInLines)
+func subdivisionsFromLinesCount(lines int) int {
+	result := math.Log2(float64(2 * lines / 3))
+	return int(result)
 }
 
 // Returns slice of pointers to slices of Regions.
 // All regions will be with 0 type and 0 elevation.
 func generateNewRegions(lines []int) []*[]Region {
-	subdivisions := subdivisionsFromLines(lines)
-	result := make([]*[]Region, subdivisions)
+	result := make([]*[]Region, len(lines))
 
-	for i := 0; i < subdivisions; i++ {
-		layer := make([]Region, int(20*math.Pow(4, float64(i))))
+	for i := 0; i < len(lines); i++ {
+		layer := make([]Region, lines[i])
 		for k := 0; k < len(layer); k++ {
 			layer[k] = Region{0, 0}
 		}
@@ -102,11 +101,41 @@ func randomElevationTransformation(subdivisions int) [][]int {
 	return matrix
 }
 
-// func applyElevationTransformation(map *[]*[]Region, transformation *[][]int) {
-// 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-// 	x := r.Intn(int(20*math.Pow(4, float64(subdivisions)-1)))
-// 	height := r.Intn(int(math.Pow(4, float64(subdivisions)-1)))
-// }
+func applyElevationTransformation(planet *[]*[]Region, transformation *[][]int) {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	y := r.Intn(len(*planet))
+	x := r.Intn(len(*(*planet)[y]))
+
+	y2 := float64(y)
+	if y > len(*planet)/2 {
+		y2 = float64(y) / 2
+	}
+
+	// between near pole area and equator
+	if float64(len(*planet))/6 <= y2 && y2 < float64(len(*planet))/3 {
+		*transformation = rotateMatrix45(*transformation)
+	}
+
+	// near the pole
+	if 0 <= y2 && y2 < float64(len(*planet))/6 {
+		*transformation = rotateMatrix90(*transformation)
+	}
+
+	for i, i2 := 0, y; i < len(*transformation); i, i2 = i+1, i2+1 {
+		for k, k2 := 0, x; k < len((*transformation)[i]); k, k2 = k+1, k2+1 {
+			if i2 >= len(*planet) {
+				i2 = 0
+			}
+
+			if k2 >= len(*(*planet)[i2]) {
+				k2 = 0
+			}
+
+			(*(*planet)[i2])[k2].Elevation += int16((*transformation)[i][k])
+		}
+	}
+	println()
+}
 
 func rotateMatrix45(matrix [][]int) [][]int {
 	height := len(matrix)
