@@ -1,17 +1,21 @@
 package main
 
 import (
-	"math"
 	"math/rand"
 	"time"
 )
+
+type Region struct {
+	Type      uint8
+	Elevation int16
+}
 
 // Returns how much triangles should have each line of a icoshpere
 // (sphere made from recursive subdivisioning of the triangles of an icosahedron).
 // The result is a slice where the index is the index of the line and the value
 // the number of triangles in that line.
 func trianglesInLines(s int) []int {
-	segmentSize := int(math.Pow(2, float64(s-1)))
+	segmentSize := pow2(s - 1)
 	result := make([]int, 3*segmentSize)
 
 	triangles := 5
@@ -34,17 +38,6 @@ func trianglesInLines(s int) []int {
 	return result
 }
 
-type Region struct {
-	Type      uint8
-	Elevation int16
-}
-
-// Returns the count of the subdivisions when given the len(trianglesInLines)
-func subdivisionsFromLinesCount(lines int) int {
-	result := math.Log2(float64(2 * lines / 3))
-	return int(result)
-}
-
 // Returns slice of pointers to slices of Regions.
 // All regions will be with 0 type and 0 elevation.
 func generateNewRegions(lines []int) []*[]Region {
@@ -65,8 +58,8 @@ func generateNewRegions(lines []int) []*[]Region {
 // (given that both have the same size) to produce a transformation in the relief.
 func randomElevationTransformation(subdivisions int) [][]int {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	width := r.Intn(int(math.Pow(4, float64(subdivisions)-1))) + 1
-	height := r.Intn(int(math.Pow(4, float64(subdivisions)-1))) + 1
+	width := r.Intn(pow4(subdivisions-1)/2) + 1
+	height := r.Intn(pow4(subdivisions-1)/2) + 1
 
 	matrix := make([][]int, height)
 	for i := 0; i < height; i++ {
@@ -76,11 +69,11 @@ func randomElevationTransformation(subdivisions int) [][]int {
 
 	for row := 0; row < height; row++ {
 		for column := 0; column < width; column++ {
-			maxByPosition := int(math.Min(float64(row), float64(column))) + 1
+			maxByPosition := min(row, column) + 1
 
 			maxByNeighbours := 0
 			if column != 0 && row != 0 {
-				maxByNeighbours = int(math.Min(float64(matrix[row-1][column]), float64(matrix[row][column-1]))) + 1
+				maxByNeighbours = min(matrix[row-1][column], matrix[row][column-1]) + 1
 			} else if column != 0 {
 				maxByNeighbours = matrix[row][column-1] + 1
 			} else if row != 0 {
@@ -89,7 +82,7 @@ func randomElevationTransformation(subdivisions int) [][]int {
 
 			max := 0
 			if maxByNeighbours != 0 {
-				max = int(math.Min(float64(maxByNeighbours), float64(maxByPosition)))
+				max = min(maxByNeighbours, maxByPosition)
 			} else {
 				max = maxByPosition
 			}
@@ -103,22 +96,30 @@ func randomElevationTransformation(subdivisions int) [][]int {
 
 func applyElevationTransformation(planet *[]*[]Region, transformation *[][]int) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	rows := float64(len(*planet))
+
 	y := r.Intn(len(*planet))
 	x := r.Intn(len(*(*planet)[y]))
 
 	y2 := float64(y)
 	if y > len(*planet)/2 {
-		y2 = float64(y) / 2
+		y2 /= 2
 	}
 
 	// between near pole area and equator
-	if float64(len(*planet))/6 <= y2 && y2 < float64(len(*planet))/3 {
+	if rows/6 <= y2 && y2 < rows/3 {
 		*transformation = rotateMatrix45(*transformation)
 	}
 
 	// near the pole
-	if 0 <= y2 && y2 < float64(len(*planet))/6 {
+	if 0 <= y2 && y2 < rows/6 {
 		*transformation = rotateMatrix90(*transformation)
+	}
+
+	sign := 1
+	if r.Intn(100)%2 == 0 {
+		sign = -1
 	}
 
 	for i, i2 := 0, y; i < len(*transformation); i, i2 = i+1, i2+1 {
@@ -131,58 +132,25 @@ func applyElevationTransformation(planet *[]*[]Region, transformation *[][]int) 
 				k2 = 0
 			}
 
-			(*(*planet)[i2])[k2].Elevation += int16((*transformation)[i][k])
+			(*(*planet)[i2])[k2].Elevation += int16((*transformation)[i][k] * sign)
 		}
 	}
-	println()
 }
 
-func rotateMatrix45(matrix [][]int) [][]int {
-	height := len(matrix)
-	width := len(matrix[0])
+func transformPlanetRelief(planet *[]*[]Region) {
+	// the maximum size of the transformation matrix is 20 times less than the planet size
+	// so the average transformation matrix size is 40 times less than the planet size.
+	// so i < 40 will have most of the areas transformed a bit, but i < 80 will increase the change of
+	// not having boring non-transformed areas
+	for i := 0; i < 40; i++ {
+		subdivisions := subdivisionsFromLinesCount(len(*planet))
+		transformation := randomElevationTransformation(subdivisions)
 
-	size := height + width - 1
+		applyElevationTransformation(planet, &transformation)
 
-	result := make([][]int, size)
-	for i := 0; i < size; i++ {
-		row := make([]int, size)
-		result[i] = row
-	}
-
-	// the actual rotation of the matrix
-	for i := 0; i < height; i++ {
-		for k := 0; k < width; k++ {
-			result[k+i][k+height-1-i] = matrix[i][k]
+		for k := 0; k < 10; k++ {
+			transformation := randomElevationTransformation(subdivisions / 2)
+			applyElevationTransformation(planet, &transformation)
 		}
 	}
-
-	// after rotating, between the diagonal lines of numbers remains 0s,
-	// so we assign to them the value of a neighbour
-	// (otherwise 0 can be found next to a big number and the terrain will be too hackly)
-	for i := 0; i < height-1; i++ {
-		for k := 0; k < width-1; k++ {
-			result[k+i+1][k+height-1-i] = result[k+i+1][k+height-2-i]
-		}
-	}
-
-	return result
-}
-
-func rotateMatrix90(matrix [][]int) [][]int {
-	height := len(matrix)
-	width := len(matrix[0])
-
-	result := make([][]int, width)
-	for i := 0; i < width; i++ {
-		column := make([]int, height)
-		result[i] = column
-	}
-
-	for i := 0; i < height; i++ {
-		for k := 0; k < width; k++ {
-			result[k][height-1-i] = matrix[i][k]
-		}
-	}
-
-	return result
 }
