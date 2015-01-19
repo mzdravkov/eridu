@@ -69,7 +69,7 @@ func randomElevationTransformation(subdivisions int) [][]int {
 
 	for row := 0; row < height; row++ {
 		for column := 0; column < width; column++ {
-			maxByPosition := min(row, column) + 1
+			maxByPosition := min(min(row, column), min(height-row-1, width-column-1)) + 1
 
 			maxByNeighbours := 0
 			if column != 0 && row != 0 {
@@ -80,14 +80,28 @@ func randomElevationTransformation(subdivisions int) [][]int {
 				maxByNeighbours = matrix[row-1][column] + 1
 			}
 
+			minByNeighbours := 0
+			if column != 0 && row != 0 {
+				minByNeighbours = max(matrix[row-1][column], matrix[row][column-1]) - 1
+			} else if column != 0 {
+				maxByNeighbours = matrix[row][column-1] - 1
+			} else if row != 0 {
+				maxByNeighbours = matrix[row-1][column] - 1
+			}
+			if minByNeighbours < 0 {
+				minByNeighbours = 0
+			}
+
 			max := 0
-			if maxByNeighbours != 0 {
+			println(maxByNeighbours, maxByPosition, "llama")
+			if maxByNeighbours > 0 {
 				max = min(maxByNeighbours, maxByPosition)
 			} else {
 				max = maxByPosition
 			}
+			println(minByNeighbours, max)
+			matrix[row][column] = r.Intn(max-minByNeighbours+1) + minByNeighbours
 
-			matrix[row][column] = r.Intn(max + 1)
 		}
 	}
 
